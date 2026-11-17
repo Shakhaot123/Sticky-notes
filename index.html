@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sticky Notes</title>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Kalam:wght@400;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css"> <!-- compiled by Tailwind CLI -->
+  <!-- app.js must load BEFORE Alpine so it can register the component -->
+  <script src="app.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js" defer></script>
+</head>
+
+<body class="bg-[#14161b] text-slate-200 h-screen flex flex-col overflow-hidden" x-data="notesApp" x-cloak>
+
+  <!-- Top navigation bar -->
+  <header class="flex flex-wrap items-center gap-3 px-4 py-3 bg-[#1b1e25] border-b border-white/10 z-[99999]">
+    <h1 class="font-extrabold text-lg tracking-tight mr-2">Sticky Notes</h1>
+    <button @click="addNote()"
+      class="bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm px-4 py-2 rounded-lg">+ New
+      Note</button>
+
+    <input type="search" x-model="query" placeholder="Search notes"
+      class="flex-1 min-w-[160px] max-w-md bg-[#0f1115] border border-white/10 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none">
+
+    <select x-model="filter" aria-label="Filter by color"
+      class="bg-[#0f1115] border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-400">
+      <option value="all">All colors</option>
+      <template x-for="name in Object.keys(colors)" :key="name">
+        <option :value="name" x-text="name[0].toUpperCase() + name.slice(1)"></option>
+      </template>
+    </select>
+
+    <span class="text-xs text-slate-400 ml-auto" x-show="notes.length"
+      x-text="visibleCount + ' of ' + notes.length + ' notes'"></span>
+    <button @click="exportNotes()"
+      class="text-sm px-3 py-2 rounded-lg border border-white/10 hover:bg-white/5">Export</button>
+    <button @click="$refs.file.click()"
+      class="text-sm px-3 py-2 rounded-lg border border-white/10 hover:bg-white/5">Import</button>
+    <input type="file" accept="application/json" class="hidden" x-ref="file" @change="importNotes($event)">
+    <button @click="clearAll()"
+      class="text-sm px-3 py-2 rounded-lg border border-red-400/30 text-red-300 hover:bg-red-500/10">Clear all</button>
+  </header>
+
+  <!-- Canvas -->
+  <main id="canvas" class="relative flex-1 overflow-auto">
+    <div class="absolute inset-0 grid place-items-center text-slate-500 pointer-events-none" x-show="!visibleCount">
+      <p class="text-center" x-show="!notes.length">No notes here yet.<br>Click <span
+          class="text-slate-300 font-semibold">+ New Note</span> to add one.</p>
+      <p class="text-center" x-show="notes.length">No notes match your search or filter.</p>
+    </div>
+
+    <template x-for="note in notes" :key="note.id">
+      <article class="note" :class="{ min: note.min }" :data-id="note.id" x-show="visible(note)" :style="{ left: note.x + 'px', top: note.y + 'px', width: note.w + 'px',
+                       height: (note.min ? barH : note.h) + 'px', zIndex: note.z, background: colors[note.color] }"
+        @pointerdown="front(note)">
+
+        <!-- Title bar with Mac-style controls -->
+        <div class="note-bar flex items-center gap-2 px-3 h-9 shrink-0" @pointerdown="startDrag($event, note)">
+          <div class="flex gap-1.5 shrink-0">
+            <button class="dot bg-[#ff5f57]" @click="remove(note)" title="Delete note"
+              aria-label="Delete note"></button>
+            <button class="dot bg-[#febc2e]" @click="note.min = !note.min" title="Collapse / expand"
+              aria-label="Collapse or expand note"></button>
+            <button class="dot bg-[#28c840]" @click="toggleMax(note)" title="Enlarge / restore"
+              aria-label="Enlarge or restore note"></button>
+          </div>
+          <input class="note-title" placeholder="Untitled" maxlength="60" aria-label="Note title" x-model="note.title">
+        </div>
+
+        <!-- Rich text toolbar (keeps the text selection while clicking) -->
+        <div class="toolbar items-center gap-0.5 px-2 py-1 border-b border-black/10 flex-wrap" @mousedown.prevent>
+          <button class="tool font-bold" @click="fmt('bold', note, $event)" title="Bold">B</button>
+          <button class="tool italic" @click="fmt('italic', note, $event)" title="Italic">I</button>
+          <button class="tool underline" @click="fmt('underline', note, $event)" title="Underline">U</button>
+          <button class="tool line-through" @click="fmt('strikeThrough', note, $event)" title="Strikethrough">S</button>
+          <button class="tool" @click="fmt('insertUnorderedList', note, $event)"
+            title="Bullet list">&bull;&equals;</button>
+          <button class="tool" @click="fmt('removeFormat', note, $event)" title="Clear formatting">&times;</button>
+          <span class="flex gap-1 ml-auto items-center pr-1">
+            <template x-for="(hex, name) in colors" :key="name">
+              <button class="swatch" :style="{ background: hex }" :title="name" :aria-label="name"
+                @click="note.color = name"></button>
+            </template>
+          </span>
+        </div>
+
+        <!-- Editable content: set once on init, synced back on input -->
+        <div class="note-body" contenteditable="true" data-placeholder="Write something..."
+          x-init="$el.innerHTML = note.html" @input="note.html = $el.innerHTML" @paste.prevent="pastePlain($event)">
+        </div>
+
+        <div class="resizer" title="Resize" @pointerdown="startResize($event, note)"></div>
+      </article>
+    </template>
+  </main>
+</body>
+
+</html>
